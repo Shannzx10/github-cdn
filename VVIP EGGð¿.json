@@ -1,0 +1,46 @@
+{
+    "_comment": "DO NOT EDIT: FILE GENERATED AUTOMATICALLY BY PTERODACTYL PANEL - PTERODACTYL.IO",
+    "meta": {
+        "version": "PTDL_v2",
+        "update_url": null
+    },
+    "exported_at": "2024-09-26T17:18:10+07:00",
+    "name": "EGG PREMIUM",
+    "author": "kilersbotz@gmail.com",
+    "description": "egg nodejs pterodactyl nodejs v18, auto install speedtest, ffmpeg, imagemagick",
+    "features": null,
+    "docker_images": {
+        "NODEJS 16": "ghcr.io\/kilerbots\/vvip:16",
+        "NODEJS 18": "ghcr.io\/kilerbots\/vvip:18",
+        "NODEJS 20": "ghcr.io\/kilerbots\/vvip:20",
+        "NODEJS 21": "ghcr.io\/kilerbots\/vvip:21",
+        "NODEJS 22": "ghcr.io\/kilerbots\/vvip:22"
+    },
+    "file_denylist": [],
+    "startup": "SILAHKAN START SERVER, JIKA INGIN MENGGUNAKAN SHELL KOSONGKAN VARIABEL DIBAWAH",
+    "config": {
+        "files": "{}",
+        "startup": "{\r\n    \"done\": \"running\"\r\n}",
+        "logs": "{}",
+        "stop": "^^c"
+    },
+    "scripts": {
+        "installation": {
+            "script": "IDUP JANGAN KEBANYAKAN RECODE :)",
+            "container": "node:18-buster-slim",
+            "entrypoint": "bash"
+        }
+    },
+    "variables": [
+        {
+            "name": "STARTUP COMMAND(OPTIONAL)",
+            "description": "",
+            "env_variable": "STARTUP_CMD",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:256",
+            "field_type": "text"
+        }
+    ]
+}

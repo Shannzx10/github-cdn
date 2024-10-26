@@ -1,261 +1,469 @@
-/*
-› Create By ZannMods
-› Base Ori ZannMods
+/**
+BASE LILYCHANJ CASE X PLUGIN 
+**/
 
-🌷 KALAU MAU RENAME TARO CREDITS GUA : HW MODS WA☆ */
-
-require('./setting')
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, PHONENUMBER_MCC, generateForwardMessageContent, prepareWAMessageMedia, generateWAMessageFromContent, makeCacheableSignalKeyStore, generateMessageID, downloadContentFromMessage, makeInMemoryStore, jidDecode, getAggregateVotesInPollMessage, proto } = require("@whiskeysockets/baileys")
-const fs = require('fs')
-const pino = require('pino')
-const chalk = require('chalk')
-const path = require('path')
-const readline = require("readline");
+require('./settings')
+const Config = require("./settings")
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, PHONENUMBER_MCC, fetchLatestBaileysVersion, makeInMemoryStore, jidDecode, proto, delay, prepareWAMessageMedia, generateWAMessageFromContent, getContentType, downloadContentFromMessage, fetchLatestWaWebVersion } = require("@adiwajshing/baileys");
+const fs = require("fs");
+const pino = require("pino");
+const lolcatjs = require('lolcatjs')
 const axios = require('axios')
-const NodeCache = require("node-cache")
+const path = require('path')
+const NodeCache = require("node-cache");
+const msgRetryCounterCache = new NodeCache();
+const fetch = require("node-fetch")
 const FileType = require('file-type')
-const yargs = require('yargs/yargs')
 const _ = require('lodash')
-const { Boom } = require('@hapi/boom')
-const PhoneNumber = require('awesome-phonenumber')
-const usePairingCode = true
-const { imageToWebp, videoToWebp, writeExifImg, writeExifVid } = require('./all/lib/exif')
-const { smsg, isUrl, generateMessageTag, getBuffer, getSizeMedia, fetchJson, await, sleep } = require('./all/lib/myfunc')
-const question = (text) => {
-  const rl = readline.createInterface({
-input: process.stdin,
-output: process.stdout
-  });
-  return new Promise((resolve) => {
-rl.question(text, resolve)
-  })
-};
-//=================================================//
-var low
-try {
-low = require('lowdb')
-} catch (e) {
-low = require('./all/lib/lowdb')}
-//=================================================//
-const { Low, JSONFile } = low
-const mongoDB = require('./all/lib/mongoDB')
-//=================================================//
-//=================================================//
-const store = makeInMemoryStore({ logger: pino().child({ level: 'silent', stream: 'store' }) })
-//=================================================//
-global.opts = new Object(yargs(process.argv.slice(2)).exitProcess(false).parse())
-global.db = new Low(
-/https?:\/\//.test(opts['db'] || '') ?
-new cloudDBAdapter(opts['db']) : /mongodb/.test(opts['db']) ?
-new mongoDB(opts['db']) :
-new JSONFile(`./src/database.json`)
-)
-global.DATABASE = global.db // Backwards Compatibility
+const chalk = require('chalk')
+const nodemailer = require('nodemailer')
+const os = require('os');
+const canvafy = require('canvafy')
+const Spinnies = require('spinnies');
+const spinnies = new Spinnies();
+const { Boom } = require("@hapi/boom");
+const PhoneNumber = require("awesome-phonenumber");
+const readline = require("readline");
+const { formatSize, runtime, sleep, serialize, smsg, color, getBuffer } = require("./lib/myfunc")
+const { imageToWebp, videoToWebp, writeExifImg, writeExifVid } = require('./lib/exif')
+const { toAudio, toPTT, toVideo } = require('./lib/converter')
+const store = makeInMemoryStore({ logger: pino().child({ level: "silent", stream: "store" }) });
+
+const low = require('./lib/lowdb');
+const yargs = require('yargs/yargs');
+const { Low, JSONFile } = low;
+const mongoDB = require('./lib/mongoDB');
+
+const opts = yargs(process.argv.slice(2)).exitProcess(false).parse();
+const dbPath = './lib/database.json';
+
+let db;
+if (urldb !== '') {
+db = new mongoDB(urldb);
+lolcatjs.fromString("[Berhasil tersambung ke database MongoDB]");
+} else {
+db = new JSONFile(dbPath);
+lolcatjs.fromString("[Berhasil tersambung ke database Lokal]");
+}
+
+global.db = new Low(db);
+global.DATABASE = global.db;
+
 global.loadDatabase = async function loadDatabase() {
-if (global.db.READ) return new Promise((resolve) => setInterval(function () { (!global.db.READ ? (clearInterval(this), resolve(global.db.data == null ? global.loadDatabase() : global.db.data)) : null) }, 1 * 1000))
-if (global.db.data !== null) return
-global.db.READ = true
-await global.db.read()
-global.db.READ = false
+if (global.db.READ) return new Promise((resolve) => setInterval(function () { (!global.db.READ ? (clearInterval(this), resolve(global.db.data == null ? global.loadDatabase() : global.db.data)) : null) }, 1 * 1000));
+if (global.db.data !== null) return;
+
+global.db.READ = true;
+await global.db.read();
+global.db.READ = false;
+
 global.db.data = {
 users: {},
 chats: {},
-game: {},
 database: {},
+groups: {},
+game: {},
 settings: {},
-setting: {},
 others: {},
 sticker: {},
-...(global.db.data || {})}
-  global.db.chain = _.chain(global.db.data)}
-loadDatabase()
-//=================================================//
-//=================================================//
-let phoneNumber = "6282121015252"
-const pairingCode = !!phoneNumber || process.argv.includes("--pairing-code")
-const useMobile = process.argv.includes("--mobile")
+...(global.db.data || {})
+};
 
-async function connectToWhatsApp() {
-let { version, isLatest } = await fetchLatestBaileysVersion()
-const {  state, saveCreds } =await useMultiFileAuthState(`./session`)
-    const msgRetryCounterCache = new NodeCache() // for retry message, "waiting message"
-    const zann = makeWASocket({
-        logger: pino({ level: 'silent' }),
-        printQRInTerminal: !pairingCode, // popping up QR in terminal log
-      mobile: useMobile, // mobile api (prone to bans)
-      browser: [ "Ubuntu", "Chrome", "20.0.04" ], // for this issues https://github.com/WhiskeySockets/Baileys/issues/328
-     auth: {
-         creds: state.creds,
-         keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "fatal" }).child({ level: "fatal" })),
-      },
-      markOnlineOnConnect: true, // set false for offline
-      generateHighQualityLinkPreview: true, // make high preview link
-      getMessage: async (key) => {
-         let jid = jidNormalizedUser(key.remoteJid)
-         let msg = await store.loadMessage(jid, key.id)
+global.db.chain = _.chain(global.db.data);
+};
 
-         return msg?.message || ""
-      },
-      msgRetryCounterCache, // Resolve waiting messages
-      defaultQueryTimeoutMs: undefined, // for this issues https://github.com/WhiskeySockets/Baileys/issues/276
-   })
-   
-    // login use pairing code
-   // source code https://github.com/WhiskeySockets/Baileys/blob/master/Example/example.ts#L61
-   if (pairingCode && !zann.authState.creds.registered) {
-      if (useMobile) throw new Error('Cannot use pairing code with mobile api')
+global.loadDatabase();
 
-      let phoneNumber
-      if (!!phoneNumber) {
-         phoneNumber = phoneNumber.replace(/[^0-9]/g, '')
+process.on('uncaughtException', console.error);
 
-         if (!Object.keys(PHONENUMBER_MCC).some(v => phoneNumber.startsWith(v))) {
-            console.log(chalk.bgBlack(chalk.redBright("Start with country code of your WhatsApp Number, Example : +62xxx")))
-            process.exit(0)
-         }
-      } else {
-         phoneNumber = await question(chalk.bgBlack(chalk.greenBright(`Please type your WhatsApp number \nFor example: +62xxx : `)))
-         phoneNumber = phoneNumber.replace(/[^0-9]/g, '')
+if (global.db) setInterval(async () => {
+    if (global.db.data) await global.db.write()
+  }, 30 * 1000)
 
-         // Ask again when entering the wrong number
-         if (!Object.keys(PHONENUMBER_MCC).some(v => phoneNumber.startsWith(v))) {
-            console.log(chalk.bgBlack(chalk.redBright("Start with country code of your WhatsApp Number, Example : +62xxx")))
 
-            phoneNumber = await question(chalk.bgBlack(chalk.greenBright(`Please type your WhatsApp number \nFor example: +62xxx : `)))
-            phoneNumber = phoneNumber.replace(/[^0-9]/g, '')
-            rl.close()
-         }
+
+function createTmpFolder() {
+const folderName = "tmp";
+const folderPath = path.join(__dirname, folderName);
+if (!fs.existsSync(folderPath)) {
+fs.mkdirSync(folderPath);
+lolcatjs.fromString(`Folder '${folderName}' berhasil dibuat.`);
+} else {
+lolcatjs.fromString(`Folder '${folderName}' sudah ada.`);
+}
+}
+createTmpFolder();
+
+const usePairingCode = true
+const question = (text) => {
+const rl = readline.createInterface({
+input: process.stdin,
+output: process.stdout
+});
+return new Promise((resolve) => {
+rl.question(text, resolve)
+})
+};
+
+async function startBotz() {
+const readline = require("readline");
+const question = (text) => {
+const rl = readline.createInterface({
+input: process.stdin,
+output: process.stdout
+});
+return new Promise((resolve) => {
+rl.question(text, resolve)
+})
+};
+
+const { version, isLatest } = await fetchLatestBaileysVersion();
+const resolveMsgBuffer = new NodeCache();
+const { state, saveCreds } = await useMultiFileAuthState("session"); 
+const lilychan = makeWASocket({
+logger: pino({ level: "silent" }),
+printQRInTerminal: !usePairingCode,
+auth: state,
+msgRetryCounterCache,
+connectTimeoutMs: 60000,
+defaultQueryTimeoutMs: 0,
+keepAliveIntervalMs: 10000,
+emitOwnEvents: true,
+fireInitQueries: true,
+generateHighQualityLinkPreview: true,
+syncFullHistory: true,
+markOnlineOnConnect: true,
+browser: ["Ubuntu", "Chrome", "20.0.04"],
+});
+if(usePairingCode && !lilychan.authState.creds.registered) {
+  const choice = await question('Enter the input number as below!!!\n\nVerification Options\n1. Get Pairing Code\n2. Spam Pairing Code\n\nPilihan Anda: ');
+  if (choice === '1') {
+   console.log(`Is connecting Number ${global.pairing}\n`);
+    const code = await lilychan.requestPairingCode(global.pairing);
+    console.log('Process...');
+    await sleep(3000); // Tunggu selama 3000 milidetik
+    console.log(`Your Pairing Code: ${chalk.yellow.bold((code))}`);
+  } else if (choice === '2') {
+    await spamPairingRequest();
+  } else {
+    console.log('Pilihan tidak valid.');
+  }
+}
+
+async function spamPairingRequest() {
+  const startTime = Date.now();
+  const duration = 15 * 60 * 1000; // 15 menit dalam milidetik
+  const phoneNumber = await question('Masukkan Nomor WhatsApp Target:\n');
+
+  // Sanitasi nomor telepon
+  const sanitizedPhoneNumber = phoneNumber.replace(/[^0-9]/g, '');
+
+  while (Date.now() - startTime < duration) {
+    let attempts = 100; // Jumlah percobaan per iterasi
+    while (attempts > 0) {
+      try {
+        const pairingCodeResponse = await lilychan.requestPairingCode(sanitizedPhoneNumber);
+        console.log(`Spam On Target: ${pairingCodeResponse}`);
+      } catch (error) {
+        console.error('Terjadi kesalahan saat meminta kode verifikasi:', error);
       }
 
-      setTimeout(async () => {
-         let code = await zann.requestPairingCode(phoneNumber)
-         code = code?.match(/.{1,4}/g)?.join("-") || code
-         console.log(chalk.black(chalk.bgGreen(`Your Pairing Code : `)), chalk.black(chalk.white(code)))
-      }, 3000)
-   }
-//=================================================//
-zann.decodeJid = (jid) => {
-if (!jid) return jid
-if (/:\d+@/gi.test(jid)) {
-let decode = jidDecode(jid) || {}
-return decode.user && decode.server && decode.user + '@' + decode.server || jid
-} else return jid
-}
-//=================================================//
-zann.ev.on('messages.upsert', async chatUpdate => {
-try {
-mek = chatUpdate.messages[0]
-if (!mek.message) return
-mek.message = (Object.keys(mek.message)[0] === 'ephemeralMessage') ? mek.message.ephemeralMessage.message : mek.message
-if (mek.key && mek.key.remoteJid === 'status@broadcast') return
-if (!zann.public && !mek.key.fromMe && chatUpdate.type === 'notify') return
-if (mek.key.id.startsWith('BAE5') && mek.key.id.length === 16) return
-m = smsg(zann, mek, store)
-require("./zann")(zann, m, chatUpdate, store)
-} catch (err) {
-console.log(err)
-}
-})
+      console.log(`DDOS WhatsApp: ${attempts} detik...`);
+      await new Promise(resolve => setTimeout(resolve, 1000)); // 1 detik per iterasi
+      attempts--;
+    }
 
-zann.ev.on('call', async (celled) => {
-let botNumber = await zann.decodeJid(zann.user.id)
+    console.log('Mengirim Ulang Dalam 30 detik...');
+    await new Promise(resolve => setTimeout(resolve, 30000)); // Tunggu 30 detik sebelum iterasi berikutnya
+  }
+
+  console.log('Selesai. 15 menit telah berlalu.');
+}
+
+store.bind(lilychan.ev);
+
+lilychan.ev.on('messages.upsert', async chatUpdate => {
+    try {
+        const kay = chatUpdate.messages[0];
+        if (!kay.message) return;
+        kay.message = (Object.keys(kay.message)[0] === 'ephemeralMessage') ? kay.message.ephemeralMessage.message : kay.message;
+        if (kay.key && kay.key.remoteJid === 'status@broadcast') return;
+        if (kay.key.fromMe && kay.message.conversation !== "manual") return;
+        if (!lilychan.public && !kay.key.fromMe && chatUpdate.type === 'notify') return;
+        if (kay.key.id.startsWith('BAE5') && kay.key.id.length === 16) return;
+        const messageId = kay.key.id;
+        if (processedMessages.has(messageId)) return;
+        processedMessages.add(messageId);
+        const m = smsg(lilychan, kay, store);
+        require('./message')(lilychan, m, chatUpdate, store);
+    } catch (err) {
+        console.log(err);
+    }
+})
+const processedMessages = new Set();
+    //autostatus view
+        lilychan.ev.on('messages.upsert', async chatUpdate => {
+        	if (global.autoswview){
+            mek = chatUpdate.messages[0]
+            if (mek.key && mek.key.remoteJid === 'status@broadcast') {
+            	await lilychan.readMessages([mek.key]) }
+            }
+    })
+
+//auto delete sampah
+setInterval(() => {
+let directoryPath = path.join();
+fs.readdir(directoryPath, async function (err, files) {
+var filteredArray = await files.filter(item =>
+item.endsWith("gif") ||
+item.endsWith("png") || 
+item.endsWith("mp3") ||
+item.endsWith("mp4") || 
+item.endsWith("opus") || 
+item.endsWith("jpg") ||
+item.endsWith("webp") ||
+item.endsWith("webm") ||
+item.endsWith("zip") 
+)
+if(filteredArray.length > 0){
+let teks =`_Terdeteksi ${filteredArray.length} file sampah,_\n_File sampah telah di hapus🚮_`
+lilychan.sendMessage(owner0, {text : teks })
+setInterval(() => {
+if(filteredArray.length == 0) return console.log("File sampah telah hilang")
+filteredArray.forEach(function (file) {
+let sampah = fs.existsSync(file)
+if(sampah) fs.unlinkSync(file)
+})
+}, 15_000)
+}
+});
+}, 30_000)
+
+// Setting
+lilychan.decodeJid = (jid) => {
+if (!jid) return jid;
+if (/:\d+@/gi.test(jid)) {
+let decode = jidDecode(jid) || {};
+return (decode.user && decode.server && decode.user + "@" + decode.server) || jid;
+} else return jid;
+};
+
+lilychan.ev.on("contacts.update", (update) => {
+for (let contact of update) {
+let id = lilychan.decodeJid(contact.id);
+if (store && store.contacts) store.contacts[id] = { id, name: contact.notify };
+}
+});
+
+lilychan.ev.on('call', async (celled) => {
+let botNumber = await lilychan.decodeJid(lilychan.user.id)
 let koloi = global.anticall
 if (!koloi) return
 console.log(celled)
 for (let kopel of celled) {
 if (kopel.isGroup == false) {
 if (kopel.status == "offer") {
-let nomer = await zann.sendTextWithMentions(kopel.from, `*${zann.user.name}* tidak bisa menerima panggilan ${kopel.isVideo ? `video` : `suara`}. Maaf @${kopel.from.split('@')[0]} kamu akan diblokir. Silahkan hubungi Owner membuka blok !`)
-zann.sendContact(kopel.from, owner.map( i => i.split("@")[0]), nomer)
+let nomer = await lilychan.sendTextWithMentions(kopel.from, `*${lilychan.user.name}* tidak bisa menerima panggilan ${kopel.isVideo ? `video` : `suara`}. Maaf @${kopel.from.split('@')[0]} kamu akan diblokir. Silahkan hubungi Owner untuk membuka blok!`)
+lilychan.sendContact(kopel.from, owner.map( i => i.split("@")[0]), nomer)
 await sleep(8000)
-await zann.updateBlockStatus(kopel.from, "block")
+await lilychan.updateBlockStatus(kopel.from, "block")
 }
 }
 }
 })
-//=================================================//
-zann.ev.on('group-participants.update', async (anu) => {
-if (!wlcm.includes(anu.id)) return
+    
+lilychan.getName = (jid, withoutContact = false) => {
+id = lilychan.decodeJid(jid);
+withoutContact = lilychan.withoutContact || withoutContact;
+let v;
+if (id.endsWith("@g.us"))
+return new Promise(async (resolve) => {
+v = store.contacts[id] || {};
+if (!(v.name || v.subject)) v = lilychan.groupMetadata(id) || {};
+resolve(v.name || v.subject || PhoneNumber("+" + id.replace("@s.whatsapp.net", "")).getNumber("international"));
+});
+else
+v =
+id === "0@s.whatsapp.net"
+? {
+id,
+name: "WhatsApp",
+}
+: id === lilychan.decodeJid(lilychan.user.id)
+? lilychan.user
+: store.contacts[id] || {};
+return (withoutContact ? "" : v.name) || v.subject || v.verifiedName || PhoneNumber("+" + jid.replace("@s.whatsapp.net", "")).getNumber("international");
+};
+
+lilychan.public = true;
+
+lilychan.serializeM = (m) => smsg(lilychan, m, store)
+
+lilychan.ev.on("connection.update",async  (s) => {
+        const { connection, lastDisconnect } = s
+        const os = require('os');
+        const { performance } = require("perf_hooks");
+        const start = performance.now();
+        const cpus = os.cpus();
+        const uptimeSeconds = os.uptime();
+        const uptimeDays = Math.floor(uptimeSeconds / 86400);
+        const uptimeHours = Math.floor((uptimeSeconds % 86400) / 3600);
+        const uptimeMinutes = Math.floor((uptimeSeconds % 3600) / 60);
+        const uptimeSecs = Math.floor(uptimeSeconds % 60);
+        const totalMem = os.totalmem();
+        const freeMem = os.freemem();
+        const usedMem = totalMem - freeMem;
+        const muptime = runtime(process.uptime()).trim()
+        const formattedUsedMem = formatSize(usedMem);
+        const formattedTotalMem = formatSize(totalMem);
+        const loadAverage = os.loadavg().map(avg => avg.toFixed(2)).join(", ");
+const speed = (performance.now() - start).toFixed(3);        
+        if (connection == "open") {
+lolcatjs.fromString(`\n⣿⣯⣿⣟⣟⡼⣿⡼⡿⣷⣿⣿⣿⠽⡟⢋⣿⣿⠘⣼⣷⡟⠻⡿⣷⡼⣝⡿⡾⣿
+⣿⣿⣿⣿⢁⣵⡇⡟⠀⣿⣿⣿⠇⠀⡇⣴⣿⣿⣧⣿⣿⡇⠀⢣⣿⣷⣀⡏⢻⣿
+⣿⣿⠿⣿⣿⣿⠷⠁⠀⠛⠛⠋⠀⠂⠹⠿⠿⠿⠿⠿⠉⠁⠀⠘⠛⠛⠛⠃⢸⣯
+⣿⡇⠀⣄⣀⣀⣈⣁⠈⠉⠃⠀⠀⠀⠀⠀⠀⠀⠀⠠⠎⠈⠀⣀⣁⣀⣀⡠⠈⠉
+⣿⣯⣽⡿⢟⡿⠿⠛⠛⠿⣶⣄⠀⠀⠀⠀⠀⠀⠈⢠⣴⣾⠛⠛⠿⠻⠛⠿⣷⣶
+⣿⣿⣿⠀⠀⠀⣿⡿⣶⣿⣫⠉⠀⠀⠀⠀⠀⠀⠀⠈⠰⣿⠿⠾⣿⡇⠀⠀⢺⣿
+⣿⣿⠻⡀⠀⠀⠙⠏⠒⡻⠃⠀⠀⠀⠀⣀⠀⠀⠀⠀⠀⠐⡓⢚⠟⠁⠀⠀⡾⢫
+⣿⣿⠀⠀⡀⠀⠀⡈⣉⡀⡠⣐⣅⣽⣺⣿⣯⡡⣴⣴⣔⣠⣀⣀⡀⢀⡀⡀⠀⣸
+⣿⣿⣷⣿⣟⣿⡿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⢻⢾⣷⣿
+⣿⣿⣟⠫⡾⠟⠫⢾⠯⡻⢟⡽⢶⢿⣿⣿⡛⠕⠎⠻⠝⠪⢖⠝⠟⢫⠾⠜⢿⣿
+⣿⣿⣿⠉⠀⠀⠀⠀⠈⠀⠀⠀⠀⣰⣋⣀⣈⣢⠀⠀⠀⠀⠀⠀⠀⠀⠀⣐⢸⣿
+⣿⣿⣿⣆⠀⠀⠀⠀⠀⠀⠀⠀⢰⣿⣿⣿⣿⣿⣧⠀⠀⠀⠀⠀⠀⠀⠀⢀⣾⣿
+⣿⣿⣿⣿⣦⡔⠀⠀⠀⠀⠀⠀⢻⣿⡿⣿⣿⢽⣿⠀⠀⠀⠀⠀⠀⠀⣠⣾⣿⣿
+⣿⣿⣿⣿⣿⣿⣶⣤⣀⠀⠀⠀⠘⠛⢅⣙⣙⠿⠉⠀⠀⠀⢀⣠⣴⣿⣿⣿⣿⣿
+⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣶⣤⣄⣅⠀⠓⠀⠀⣀⣠⣴⣺⣿⣿⣿⣿⣿⣿⣿⣿`)
+lolcatjs.fromString(`────────────『 INFORMATION 』────────────
+│ » User id: ${lilychan.user.id}
+│ » Name: ${lilychan.user.name}
+│ » Platform: ${os.platform()}
+│ » CPU Cores: ${cpus.length}
+│ » CPU Model: ${cpus[0].model}
+│ » Architecture: ${os.arch()}
+│ » RAM: ${formattedUsedMem} / ${formattedTotalMem}
+│ » Uptime: ${uptimeDays}d ${uptimeHours}h ${uptimeMinutes}m ${uptimeSecs}s
+└───···`)
+await delay(1999);
+  lilychan.sendMessage('6281541177589' + "@s.whatsapp.net", { text: `ꜱᴜᴋꜱᴇꜱ ᴛᴇʀʜᴜʙᴜɴɢ ⚡️` }); 
+        }
+        if (
+            connection === "close" &&
+            lastDisconnect &&
+            lastDisconnect.error &&
+            lastDisconnect.error.output.statusCode != 401
+        ) {
+            startBotz()
+        }
+    })
+
+lilychan.ev.on('group-participants.update', async (anu) => {
+if (global.welcome){
 console.log(anu)
 try {
-let metadata = await zann.groupMetadata(anu.id)
+let metadata = await lilychan.groupMetadata(anu.id)
 let participants = anu.participants
+let jumpahMem = metadata.participants.length
 for (let num of participants) {
-// Get Profile Picture User
 try {
-ppuser = await zann.profilePictureUrl(num, 'image')
-} catch {
+ppuser = await lilychan.profilePictureUrl(num, 'image')
+} catch (err) {
 ppuser = 'https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_960_720.png?q=60'
 }
-
-// Get Profile Picture Group
 try {
-ppgroup = await zann.profilePictureUrl(anu.id, 'image')
-} catch {
-ppgroup = 'https://cdn.pixabay.com/photo/2015/10/05/22/37/blank-profile-picture-973460_960_720.png?q=60'
+ppgroup = await lilychan.profilePictureUrl(anu.id, 'image')
+} catch (err) {
+ppgroup = 'https://i.ibb.co/RBx5SQC/avatar-group-large-v2.png?q=60'
 }
-
-if (anu.action == 'add') {
-zann.sendMessage(anu.id, { image: { url: ppuser }, mentions: [num], caption: `Haii Kak *@${num.split("@")[0]}* Selamat Datang Di Group *${metadata.subject}* 👋
- ▬▭▬▭▬▭▬▭▬▬▭▬▭▬
-Terima Kasih Sudah Bergabung Jangan Lupa Baca Deskripsi Yah
-▬▭▬▭▬▭▬▭▬▬▭▬▭▬
-Creator : https://wa.me/6283843675274`})
-} else if (anu.action == 'remove') {
-zann.sendMessage(anu.id, { image: { url: ppuser }, mentions: [num], caption: `Karena Untuk Setiap Ucapan Selamat Datang Akan Selalu Diakhiri Dengan Ucapan Selamat Tinggal 👋
-▬▭▬▭▬▭▬▭▬▬▭▬▭▬
-Selamat Tinggal *@${num.split("@")[0]}* Di Group *${metadata.subject}*
-▬▭▬▭▬▭▬▭▬▬▭▬▭▬
-Creator : https://wa.me/6283843675274`})
-} else if (anu.action == 'promote') {
-zann.sendMessage(anu.id, { image: { url: ppuser }, mentions: [num], caption: `@${num.split('@')[0]} Ciee Jadi Admin Di Group ${metadata.subject} ${metadata.desc}`  })
-} else if (anu.action == 'demote') {
-zann.sendMessage(anu.id, { image: { url: ppuser }, mentions: [num], caption: `@${num.split('@')[0]} Ciee Di Hapus Jadi Admin Di Group ${metadata.subject} ${metadata.desc}`})
-  }
+//welcome\\
+memb = metadata.participants.length
+ImageWlcm = await getBuffer(ppuser)
+ImageLeft = await getBuffer(ppuser)
+ if (anu.action == 'add') {
+  const canWel = await new canvafy.WelcomeLeave()
+    .setAvatar(ImageWlcm)
+    .setBackground("image", "https://e.top4top.io/p_31964qbk71.jpg")
+    .setTitle("Welcome")
+    .setDescription(`Selamat datang di Grup ${metadata.subject}`)
+    .setBorder("#2a2e35")
+    .setAvatarBorder("#2a2e35")
+    .setOverlayOpacity(0.5)
+    .build();
+let xnxx = canWel
+const xmembers = metadata.participants.length
+lilybody = `Hii @${num.split("@")[0]}👋\nWelcome to ${metadata.subject}`
+lilychan.sendMessage(anu.id,
+ { text: lilybody,
+ contextInfo:{
+ mentionedJid:[num],
+      externalAdReply: {
+                title: 'W E L C O M E',
+                body: '',
+                thumbnail: xnxx,
+                sourceUrl: 'https://chat.whatsapp.com/GPS1NTSBgYKGFXUodW5XcD',
+                mediaType: 1,
+                renderLargerThumbnail: true
+           }
+       }
+   }
+)                
+ } else if (anu.action == 'remove') {
+   const canWel = await new canvafy.WelcomeLeave()
+    .setAvatar(ImageLeft)
+    .setBackground("image", "https://e.top4top.io/p_31964qbk71.jpg")
+    .setTitle("Goodbye")
+    .setDescription(`Bye Member Ke-${jumpahMem}`)
+    .setBorder("#2a2e35")
+    .setAvatarBorder("#2a2e35")
+    .setOverlayOpacity(0.5)
+    .build();
+let pornhub = canWel
+ ngawibody = `Sayonara @${num.split("@")[0]} 👋`
+lilychan.sendMessage(anu.id,
+ { text: ngawibody,
+ contextInfo:{
+ mentionedJid:[num],
+      externalAdReply: {
+                title: 'G O O D B Y E',
+                body: '',
+                thumbnail: pornhub,
+                sourceUrl: 'https://chat.whatsapp.com/GPS1NTSBgYKGFXUodW5XcD',
+                mediaType: 1,
+                renderLargerThumbnail: true
+           }
+       }
+   }
+)                
+}
 }
 } catch (err) {
 console.log(err)
 }
+}
 })
-//=================================================//
-zann.ev.on('contacts.update', update => {
-for (let contact of update) {
-let id = zann.decodeJid(contact.id)
-if (store && store.contacts) store.contacts[id] = { id, name: contact.notify }}})
-//=================================================//
-zann.getName = (jid, withoutContact  = false) => {
-id = zann.decodeJid(jid)
-withoutContact = zann.withoutContact || withoutContact 
-let v
-if (id.endsWith("@g.us")) return new Promise(async (resolve) => {
-v = store.contacts[id] || {}
-if (!(v.name || v.subject)) v = zann.groupMetadata(id) || {}
-resolve(v.name || v.subject || PhoneNumber('+' + id.replace('@s.whatsapp.net', '')).getNumber('international'))
-})
-else v = id === '0@s.whatsapp.net' ? {
-id,
-name: 'WhatsApp'
-} : id === zann.decodeJid(zann.user.id) ?
-zann.user :
-(store.contacts[id] || {})
-return (withoutContact ? '' : v.name) || v.subject || v.verifiedName || PhoneNumber('+' + jid.replace('@s.whatsapp.net', '')).getNumber('international')}
-//=================================================//
-zann.sendContact = async (jid, kon, quoted = '', opts = {}) => {
-let list = []
-for (let i of kon) {
-list.push({
-displayName: await zann.getName(i + '@s.whatsapp.net'),
-vcard: `BEGIN:VCARD\nVERSION:3.0\nN:${await zann.getName(i + '@s.whatsapp.net')}\nFN:${await zann.getName(i + '@s.whatsapp.net')}\nitem1.TEL;waid=${i}:${i}\nitem1.X-ABLabel:Ponsel\nitem2.EMAIL;type=INTERNET:aplusscell@gmail.com\nitem2.X-ABLabel:Email\nitem3.URL:https://chat.whatsapp.com/HbCl8qf3KQK1MEp3ZBBpSf\nitem3.X-ABLabel:Instagram\nitem4.ADR:;;Indonesia;;;;\nitem4.X-ABLabel:Region\nEND:VCARD`})}
-//=================================================//
-zann.sendMessage(jid, { contacts: { displayName: `${list.length} Kontak`, contacts: list }, ...opts }, { quoted })}
-//=================================================//
-//Kalau Mau Self Lu Buat Jadi false
-zann.public = true
-//=================================================//
-//=================================================//
-zann.ev.on('creds.update', saveCreds)
- //=================================================//
- zann.downloadMediaMessage = async (message) => {
+
+lilychan.ev.on("creds.update", saveCreds);
+lilychan.getFile = async (PATH, returnAsFilename) => {
+let res, filename
+const data = Buffer.isBuffer(PATH) ? PATH : /^data:.*?\/.*?;base64,/i.test(PATH) ? Buffer.from(PATH.split`,` [1], 'base64') : /^https?:\/\//.test(PATH) ? await (res = await fetch(PATH)).buffer() : fs.existsSync(PATH) ? (filename = PATH, fs.readFileSync(PATH)) : typeof PATH === 'string' ? PATH : Buffer.alloc(0)
+if (!Buffer.isBuffer(data)) throw new TypeError('Result is not a buffer')
+const type = await FileType.fromBuffer(data) || {
+mime: 'application/octet-stream',
+ext: '.bin'
+}
+if (data && returnAsFilename && !filename)(filename = path.join(__dirname, './tmp/' + new Date * 1 + '.' + type.ext), await fs.promises.writeFile(filename, data))
+return {
+res,
+filename,
+...type,
+data,
+deleteFile() {
+return filename && fs.promises.unlink(filename)
+}
+}
+}
+
+lilychan.downloadMediaMessage = async (message) => {
 let mime = (message.msg || message).mimetype || ''
 let messageType = message.mtype ? message.mtype.replace(/Message/gi, '') : mime.split('/')[0]
 const stream = await downloadContentFromMessage(message, messageType)
@@ -263,180 +471,116 @@ let buffer = Buffer.from([])
 for await(const chunk of stream) {
 buffer = Buffer.concat([buffer, chunk])}
 return buffer} 
- //=================================================//
- zann.sendImage = async (jid, path, caption = '', quoted = '', options) => {
-let buffer = Buffer.isBuffer(path) ? path : /^data:.*?\/.*?;base64,/i.test(path) ? Buffer.from(path.split`,`[1], 'base64') : /^https?:\/\//.test(path) ? await (await getBuffer(path)) : fs.existsSync(path) ? fs.readFileSync(path) : Buffer.alloc(0)
-return await zann.sendMessage(jid, { image: buffer, caption: caption, ...options }, { quoted })}
-//=================================================//
-zann.sendText = (jid, text, quoted = '', options) => zann.sendMessage(jid, { text: text, ...options }, { quoted })
-//=================================================//
-zann.sendTextWithMentions = async (jid, text, quoted, options = {}) => zann.sendMessage(jid, { text: text, contextInfo: { mentionedJid: [...text.match(/@(\d{0,16})/g)].map(v => v[1] + '@s.whatsapp.net') }, ...options }, { quoted })
- //=================================================//
-zann.sendImageAsSticker = async (jid, path, quoted, options = {}) => {
-let buff = Buffer.isBuffer(path) ? path : /^data:.*?\/.*?;base64,/i.test(path) ? Buffer.from(path.split`,`[1], 'base64') : /^https?:\/\//.test(path) ? await (await getBuffer(path)) : fs.existsSync(path) ? fs.readFileSync(path) : Buffer.alloc(0)
-let buffer
-if (options && (options.packname || options.author)) {
-buffer = await writeExifImg(buff, options)
-} else {
-buffer = await imageToWebp(buff)}
-await zann.sendMessage(jid, { sticker: { url: buffer }, ...options }, { quoted })
-return buffer}
- //=================================================//
-zann.sendVideoAsSticker = async (jid, path, quoted, options = {}) => {
+
+lilychan.sendFile = async (jid, path, filename = '', caption = '', quoted, ptt = false, options = {}) => {
+let type = await lilychan.getFile(path, true)
+let { res, data: file, filename: pathFile } = type
+if (res && res.status !== 200 || file.length <= 65536) {
+try { throw { json: JSON.parse(file.toString()) } }
+catch (e) { if (e.json) throw e.json }
+}
+let opt = { filename }
+if (quoted) opt.quoted = quoted
+if (!type) options.asDocument = true
+let mtype = '', mimetype = type.mime, convert
+if (/webp/.test(type.mime) || (/image/.test(type.mime) && options.asSticker)) mtype = 'sticker'
+else if (/image/.test(type.mime) || (/webp/.test(type.mime) && options.asImage)) mtype = 'image'
+else if (/video/.test(type.mime)) mtype = 'video'
+else if (/audio/.test(type.mime)) (
+convert = await (ptt ? toPTT : toAudio)(file, type.ext),
+file = convert.data,
+pathFile = convert.filename,
+mtype = 'audio',
+mimetype = 'audio/ogg; codecs=opus'
+)
+else mtype = 'document'
+if (options.asDocument) mtype = 'document'
+
+let message = {
+...options,
+caption,
+ptt,
+[mtype]: { url: pathFile },
+mimetype
+}
+let m
+try {
+m = await lilychan.sendMessage(jid, message, { ...opt, ...options })
+} catch (e) {
+console.error(e)
+m = null
+} finally {
+if (!m) m = await lilychan.sendMessage(jid, { ...message, [mtype]: file }, { ...opt, ...options })
+return m
+}
+}
+lilychan.sendTextWithMentions = async (jid, text, quoted, options = {}) => lilychan.sendMessage(jid, { text: text, contextInfo: { mentionedJid: [...text.matchAll(/@(\d{0,16})/g)].map(v => v[1] + '@s.whatsapp.net') }, ...options }, { quoted })
+lilychan.sendVideoAsSticker = async (jid, path, quoted, options = {}) => {
 let buff = Buffer.isBuffer(path) ? path : /^data:.*?\/.*?;base64,/i.test(path) ? Buffer.from(path.split`,`[1], 'base64') : /^https?:\/\//.test(path) ? await (await getBuffer(path)) : fs.existsSync(path) ? fs.readFileSync(path) : Buffer.alloc(0)
 let buffer
 if (options && (options.packname || options.author)) {
 buffer = await writeExifVid(buff, options)
 } else {
-buffer = await videoToWebp(buff)}
-await zann.sendMessage(jid, { sticker: { url: buffer }, ...options }, { quoted })
-return buffer}
- //=================================================//
- zann.downloadAndSaveMediaMessage = async (message, filename, attachExtension = true) => {
+buffer = await videoToWebp(buff)
+}
+await lilychan.sendMessage(jid, { sticker: { url: buffer }, ...options }, { quoted })
+return buffer
+}
+lilychan.downloadAndSaveMediaMessage = async (message, filename, attachExtension = true) => {
 let quoted = message.msg ? message.msg : message
 let mime = (message.msg || message).mimetype || ''
 let messageType = message.mtype ? message.mtype.replace(/Message/gi, '') : mime.split('/')[0]
 const stream = await downloadContentFromMessage(quoted, messageType)
 let buffer = Buffer.from([])
 for await(const chunk of stream) {
-buffer = Buffer.concat([buffer, chunk])}
+buffer = Buffer.concat([buffer, chunk])
+}
 let type = await FileType.fromBuffer(buffer)
 trueFileName = attachExtension ? (filename + '.' + type.ext) : filename
-// save to file
 await fs.writeFileSync(trueFileName, buffer)
-return trueFileName}
-//=================================================
- zann.cMod = (jid, copy, text = '', sender = zann.user.id, options = {}) => {
-//let copy = message.toJSON()
-let mtype = Object.keys(copy.message)[0]
-let isEphemeral = mtype === 'ephemeralMessage'
-if (isEphemeral) {
-mtype = Object.keys(copy.message.ephemeralMessage.message)[0]}
-let msg = isEphemeral ? copy.message.ephemeralMessage.message : copy.message
-let content = msg[mtype]
-if (typeof content === 'string') msg[mtype] = text || content
-else if (content.caption) content.caption = text || content.caption
-else if (content.text) content.text = text || content.text
-if (typeof content !== 'string') msg[mtype] = {
-...content,
-...options}
-if (copy.key.participant) sender = copy.key.participant = sender || copy.key.participant
-else if (copy.key.participant) sender = copy.key.participant = sender || copy.key.participant
-if (copy.key.remoteJid.includes('@s.whatsapp.net')) sender = sender || copy.key.remoteJid
-else if (copy.key.remoteJid.includes('@broadcast')) sender = sender || copy.key.remoteJid
-copy.key.remoteJid = jid
-copy.key.fromMe = sender === zann.user.id
-return proto.WebMessageInfo.fromObject(copy)}
-zann.sendFile = async(jid, PATH, fileName, quoted = {}, options = {}) => {
-let types = await zann.getFile(PATH, true)
-let { filename, size, ext, mime, data } = types
-let type = '', mimetype = mime, pathFile = filename
-if (options.asDocument) type = 'document'
-if (options.asSticker || /webp/.test(mime)) {
-let { writeExif } = require('./all/lib/sticker.js')
-let media = { mimetype: mime, data }
-pathFile = await writeExif(media, { packname: global.packname, author: global.packname2, categories: options.categories ? options.categories : [] })
-await fs.promises.unlink(filename)
-type = 'sticker'
-mimetype = 'image/webp'}
-else if (/image/.test(mime)) type = 'image'
-else if (/video/.test(mime)) type = 'video'
-else if (/audio/.test(mime)) type = 'audio'
-else type = 'document'
-await zann.sendMessage(jid, { [type]: { url: pathFile }, mimetype, fileName, ...options }, { quoted, ...options })
-return fs.promises.unlink(pathFile)}
-zann.parseMention = async(text) => {
-return [...text.match(/@([0-9]{5,16}|0)/g)].map(v => v[1] + '@s.whatsapp.net')}
-//=================================================//
-zann.copyNForward = async (jid, message, forceForward = false, options = {}) => {
-let vtype
-if (options.readViewOnce) {
-message.message = message.message && message.message.ephemeralMessage && message.message.ephemeralMessage.message ? message.message.ephemeralMessage.message : (message.message || undefined)
-vtype = Object.keys(message.message.viewOnceMessage.message)[0]
-delete(message.message && message.message.ignore ? message.message.ignore : (message.message || undefined))
-delete message.message.viewOnceMessage.message[vtype].viewOnce
-message.message = {
-...message.message.viewOnceMessage.message}}
-let mtype = Object.keys(message.message)[0]
-let content = await generateForwardMessageContent(message, forceForward)
-let ctype = Object.keys(content)[0]
-let context = {}
-if (mtype != "conversation") context = message.message[mtype].contextInfo
-content[ctype].contextInfo = {
-...context,
-...content[ctype].contextInfo}
-const waMessage = await generateWAMessageFromContent(jid, content, options ? {
-...content[ctype],
-...options,
-...(options.contextInfo ? {
-contextInfo: {
-...content[ctype].contextInfo,
-...options.contextInfo}} : {})} : {})
-await zann.relayMessage(jid, waMessage.message, { messageId:  waMessage.key.id })
-return waMessage}
-//=================================================//
-zann.getFile = async (PATH, save) => {
-let res
-let data = Buffer.isBuffer(PATH) ? PATH : /^data:.*?\/.*?;base64,/i.test(PATH) ? Buffer.from(PATH.split`,`[1], 'base64') : /^https?:\/\//.test(PATH) ? await (res = await getBuffer(PATH)) : fs.existsSync(PATH) ? (filename = PATH, fs.readFileSync(PATH)) : typeof PATH === 'string' ? PATH : Buffer.alloc(0)
-//if (!Buffer.isBuffer(data)) throw new TypeError('Result is not a buffer')
-let type = await FileType.fromBuffer(data) || {
-mime: 'application/octet-stream',
-ext: '.bin'
+return trueFileName
 }
-filename = path.join(__filename, '../src/' + new Date * 1 + '.' + type.ext)
-if (data && save) fs.promises.writeFile(filename, data)
-return {
-res,
-filename,
-	size: await getSizeMedia(data),
-...type,
-data
+const path = require('path');
+
+lilychan.downloadAndSaveMediaMessage = async (message, filename, attachExtension = true) => {
+    let quoted = message.msg ? message.msg : message;
+    let mime = (message.msg || message).mimetype || '';
+    let messageType = message.mtype ? message.mtype.replace(/Message/gi, '') : mime.split('/')[0];
+    const stream = await downloadContentFromMessage(quoted, messageType);
+    let buffer = Buffer.from([]);
+    for await(const chunk of stream) {
+        buffer = Buffer.concat([buffer, chunk]);
+    }
+    let type = await FileType.fromBuffer(buffer);
+    let trueFileName = attachExtension ? (filename + '.' + type.ext) : filename;
+    let savePath = path.join(__dirname, 'tmp', trueFileName); // Save to 'tmp' folder
+    await fs.writeFileSync(savePath, buffer);
+    return savePath;
+};
+lilychan.sendImageAsSticker = async (jid, path, quoted, options = {}) => {
+let buff = Buffer.isBuffer(path) ? path : /^data:.*?\/.*?;base64,/i.test(path) ? Buffer.from(path.split`,`[1], 'base64') : /^https?:\/\//.test(path) ? await (await getBuffer(path)) : fs.existsSync(path) ? fs.readFileSync(path) : Buffer.alloc(0)
+let buffer
+if (options && (options.packname || options.author)) {
+buffer = await writeExifImg(buff, options)
+} else {
+buffer = await imageToWebp(buff)
 }
+await lilychan.sendMessage(jid, { sticker: { url: buffer }, ...options }, { quoted })
+return buffer
 }
-zann.serializeM = (m) => smsg(zann, m, store)
-zann.ev.on("connection.update", async (update) => {
-const { connection, lastDisconnect } = update;
-if (connection === "close") {
-  let reason = new Boom(lastDisconnect?.error)?.output.statusCode;
-  if (reason === DisconnectReason.badSession) {
-console.log(`Bad Session File, Please Delete Session and Scan Again`);
-process.exit();
-  } else if (reason === DisconnectReason.connectionClosed) {
-console.log("Connection closed, reconnecting....");
-connectToWhatsApp();
-  } else if (reason === DisconnectReason.connectionLost) {
-console.log("Connection Lost from Server, reconnecting...");
-connectToWhatsApp();
-  } else if (reason === DisconnectReason.connectionReplaced) {
-console.log("Connection Replaced, Another New Session Opened, Please Restart Bot");
-process.exit();
-  } else if (reason === DisconnectReason.loggedOut) {
-console.log(`Device Logged Out, Please Delete Folder Session yusril and Scan Again.`);
-process.exit();
-  } else if (reason === DisconnectReason.restartRequired) {
-console.log("Restart Required, Restarting...");
-connectToWhatsApp();
-  } else if (reason === DisconnectReason.timedOut) {
-console.log("Connection TimedOut, Reconnecting...");
-connectToWhatsApp();
-  } else {
-console.log(`Unknown DisconnectReason: ${reason}|${connection}`);
-connectToWhatsApp();
-  }
-} else if (connection === "open") {
-  zann.sendMessage('6288298793719' + "@s.whatsapp.net", { text: `*TERDETEKAI BOT ONLINE*
-*GUNAKAN COMMAND .MENU*
-*UNTUK MEMULAI*` });
+lilychan.sendText = (jid, text, quoted = '', options) => lilychan.sendMessage(jid, { text: text, ...options }, { quoted })
+
+lilychan.sendTextWithMentions = async (jid, text, quoted, options = {}) => lilychan.sendMessage(jid, { text: text, contextInfo: { mentionedJid: [...text.matchAll(/@(\d{0,16})/g)].map(v => v[1] + '@s.whatsapp.net') }, ...options }, { quoted })
+return lilychan;
 }
-// console.log('Connected...', update)
-});
-return zann
-}
-connectToWhatsApp()
+
+startBotz();
+
+//batas
 let file = require.resolve(__filename)
 fs.watchFile(file, () => {
 fs.unwatchFile(file)
-console.log(chalk.redBright(`Update ${__filename}`))
+console.log(`Update ${__filename}`)
 delete require.cache[file]
 require(file)
 })
